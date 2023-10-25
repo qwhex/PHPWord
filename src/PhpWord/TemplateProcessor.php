@@ -861,43 +861,34 @@ class TemplateProcessor
      * @return null|string
      */
     public function cloneBlock($blockname, $clones = 1, $replace = true, $indexVariables = false, $variableReplacements = null)
-    {
-        $xmlBlock = null;
-        $matches = [];
-        $escapedMacroOpeningChars = self::$macroOpeningChars;
-        $escapedMacroClosingChars = self::$macroClosingChars;
-        preg_match(
-            //'/(.*((?s)<w:p\b(?:(?!<w:p\b).)*?\{{' . $blockname . '}<\/w:.*?p>))(.*)((?s)<w:p\b(?:(?!<w:p\b).)[^$]*?\{{\/' . $blockname . '}<\/w:.*?p>)/is',
-            '/(.*((?s)<w:p\b(?:(?!<w:p\b).)*?\\' . $escapedMacroOpeningChars . $blockname . $escapedMacroClosingChars . '<\/w:.*?p>))(.*)((?s)<w:p\b(?:(?!<w:p\b).)[^$]*?\\' . $escapedMacroOpeningChars . '\/' . $blockname . $escapedMacroClosingChars . '<\/w:.*?p>)/is',
-            //'/(.*((?s)<w:p\b(?:(?!<w:p\b).)*?\\'. $escapedMacroOpeningChars . $blockname . '}<\/w:.*?p>))(.*)((?s)<w:p\b(?:(?!<w:p\b).)[^$]*?\\'.$escapedMacroOpeningChars.'\/' . $blockname . '}<\/w:.*?p>)/is',
-            $this->tempDocumentMainPart,
-            $matches
-        );
+	{
+		$xmlBlock = null;
 
-        if (isset($matches[3])) {
-            $xmlBlock = $matches[3];
-            if ($indexVariables) {
-                $cloned = $this->indexClonedVariables($clones, $xmlBlock);
-            } elseif ($variableReplacements !== null && is_array($variableReplacements)) {
-                $cloned = $this->replaceClonedVariables($variableReplacements, $xmlBlock);
-            } else {
-                $cloned = [];
-                for ($i = 1; $i <= $clones; ++$i) {
-                    $cloned[] = $xmlBlock;
-                }
-            }
+		[$block, $content] = $this->findBlockParts($blockname);
+		if (isset($content)) {
+			$xmlBlock = $content;
+			if ($indexVariables) {
+				$cloned = $this->indexClonedVariables($clones, $xmlBlock);
+			} elseif ($variableReplacements !== null && is_array($variableReplacements)) {
+				$cloned = $this->replaceClonedVariables($variableReplacements, $xmlBlock);
+			} else {
+				$cloned = array();
+				for ($i = 1; $i <= $clones; $i++) {
+					$cloned[] = $xmlBlock;
+				}
+			}
 
-            if ($replace) {
-                $this->tempDocumentMainPart = str_replace(
-                    $matches[2] . $matches[3] . $matches[4],
-                    implode('', $cloned),
-                    $this->tempDocumentMainPart
-                );
-            }
-        }
+			if ($replace) {
+				$this->tempDocumentMainPart = str_replace(
+					$block,
+					implode('', $cloned),
+					$this->tempDocumentMainPart
+				);
+			}
+		}
 
-        return $xmlBlock;
-    }
+		return $xmlBlock;
+	}
 
     /**
      * Replace a block.
@@ -905,25 +896,36 @@ class TemplateProcessor
      * @param string $blockname
      * @param string $replacement
      */
-    public function replaceBlock($blockname, $replacement): void
-    {
-        $matches = [];
-        $escapedMacroOpeningChars = preg_quote(self::$macroOpeningChars);
-        $escapedMacroClosingChars = preg_quote(self::$macroClosingChars);
-        preg_match(
-            '/(<\?xml.*)(<w:p.*>' . $escapedMacroOpeningChars . $blockname . $escapedMacroClosingChars . '<\/w:.*?p>)(.*)(<w:p.*' . $escapedMacroOpeningChars . '\/' . $blockname . $escapedMacroClosingChars . '<\/w:.*?p>)/is',
-            $this->tempDocumentMainPart,
-            $matches
-        );
+	public function replaceBlock($blockname, $replacement)
+	{
+		[$block, $content] = $this->findBlockParts($blockname);
+		if (isset($content)) {
+			$this->tempDocumentMainPart = str_replace(
+				$block,
+				$replacement,
+				$this->tempDocumentMainPart
+			);
+		}
+	}
 
-        if (isset($matches[3])) {
-            $this->tempDocumentMainPart = str_replace(
-                $matches[2] . $matches[3] . $matches[4],
-                $replacement,
-                $this->tempDocumentMainPart
-            );
-        }
-    }
+	protected function findBlockParts($blockname)
+	{
+		$open = mb_strpos($this->tempDocumentMainPart, '${' . $blockname . '}');
+		if($open === false) {
+			return [null, null];
+		}
+		$close = mb_strpos($this->tempDocumentMainPart, '${/' . $blockname . '}');
+		if($close === false) {
+			return [null, null];
+		}
+		$start = mb_strrpos(mb_substr($this->tempDocumentMainPart, 0, $open), '<w:p>');
+		$end = mb_strpos($this->tempDocumentMainPart, '</w:p>', $close) + mb_strlen('</w:p>');
+		$openEnd = mb_strpos($this->tempDocumentMainPart, '</w:p>', $open) + mb_strlen('</w:p>');
+		$closeStart = mb_strrpos(mb_substr($this->tempDocumentMainPart, 0, $close), '<w:p>');
+		$block = mb_substr($this->tempDocumentMainPart, $start, $end - $start);
+		$content = mb_substr($this->tempDocumentMainPart, $openEnd, $closeStart - $openEnd);
+		return [$block, $content];
+	}
 
     /**
      * Delete a block of text.
